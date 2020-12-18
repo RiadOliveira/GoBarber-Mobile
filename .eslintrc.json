@@ -47,7 +47,8 @@
               "tsx": "never"
             }
         ],
-        "prettier/prettier": "error"
+        "prettier/prettier": "error",
+        "import/no-duplicates": "off"
     },
     "settings": {
         "import/resolver": {

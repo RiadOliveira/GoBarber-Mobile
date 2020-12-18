@@ -6,7 +6,6 @@ import AppRoutes from './app.routes';
 
 const Routes: React.FC = () => {
     const { user, loading } = useAuth();
-
     if (loading) {
         return (
             <View
