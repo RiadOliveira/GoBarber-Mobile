@@ -1,40 +1,50 @@
 import React, { useCallback, useRef } from 'react';
 import * as yup from 'yup';
 
+import Icon from 'react-native-vector-icons/Feather';
 import {
-    Image,
     View,
     KeyboardAvoidingView,
     Platform,
     TextInput,
     Alert,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Feather';
 import { ScrollView } from 'react-native-gesture-handler';
 import { useNavigation } from '@react-navigation/native';
 import { Form } from '@unform/mobile';
 import { FormHandles } from '@unform/core';
+import ImagePicker from 'react-native-image-picker';
 import getValidationErrors from '../../utils/getValidationErrors';
 import api from '../../services/api';
-
 import Input from '../../components/Input';
 import Button from '../../components/Button';
 
-import logoImg from '../../assets/logo.png';
-
-import { Container, Title, BackToSignIn, BackToSignInText } from './styles';
+import {
+    Container,
+    Title,
+    UserAvatarButton,
+    UserAvatar,
+    BackButton,
+} from './styles';
+import { useAuth } from '../../hooks/auth';
 
 interface ProfileFormData {
+    name: string;
     email: string;
-    password: string;
+    oldPassword?: string;
+    password?: string;
+    passwordConfirmation?: string;
 }
 
 const Profile: React.FC = () => {
     const navigation = useNavigation();
+    const { user, updateUser } = useAuth();
 
     const formRef = useRef<FormHandles>(null);
     const emailInputRef = useRef<TextInput>(null);
+    const oldPasswordInputRef = useRef<TextInput>(null);
     const passwordInputRef = useRef<TextInput>(null);
+    const confirmPasswordInputRef = useRef<TextInput>(null);
 
     const handleProfile = useCallback(
         async (data: ProfileFormData) => {
@@ -47,21 +57,52 @@ const Profile: React.FC = () => {
                         .string()
                         .required('E-mail obrigatório')
                         .email('Digite um e-mail válido'),
-                    password: yup.string().min(8, 'No mínimo 8 digitos'),
+                    oldPassword: yup.string(),
+                    password: yup.string().when('oldPassword', {
+                        is: val => !!val.length,
+                        then: yup.string().required('Campo obrigatório'),
+                        otherwise: yup.string(),
+                    }),
+                    passwordConfirmation: yup
+                        .string()
+                        .when('oldPassword', {
+                            is: val => !!val.length,
+                            then: yup.string().required('Campo obrigatório'),
+                            otherwise: yup.string(),
+                        })
+                        .oneOf([yup.ref('password')], 'Confirmação incorreta'),
                 });
 
                 await schema.validate(data, {
                     abortEarly: false,
                 });
 
-                await api.post('/users', data);
+                const {
+                    name,
+                    email,
+                    oldPassword,
+                    password,
+                    passwordConfirmation,
+                } = data;
 
-                Alert.alert(
-                    'Cadastro realizado com sucesso!',
-                    'Você já pode fazer login na aplicação.',
-                );
+                const formData = {
+                    name,
+                    email,
+                    ...(oldPassword
+                        ? {
+                              oldPassword,
+                              password,
+                              passwordConfirmation,
+                          }
+                        : {}),
+                };
 
-                navigation.navigate('SignIn');
+                const response = await api.put('/profile', formData);
+                updateUser(response.data);
+
+                Alert.alert('Perfil atualizado com sucesso!');
+
+                navigation.goBack();
             } catch (err) {
                 if (err instanceof yup.ValidationError) {
                     const errors = getValidationErrors(err);
@@ -72,13 +113,53 @@ const Profile: React.FC = () => {
                 }
 
                 Alert.alert(
-                    'Erro no cadastro',
-                    'Ocorreu um erro ao fazer cadastrro, tente novamente.',
+                    'Erro na atualização do perfil',
+                    'Ocorreu um erro ao atualizar seu perfil, tente novamente.',
                 );
             }
         },
-        [navigation],
+        [navigation, updateUser],
     );
+
+    const handleGoBack = useCallback(() => {
+        navigation.goBack();
+    }, [navigation]);
+
+    const handleUpdateAvatar = useCallback(() => {
+        ImagePicker.showImagePicker(
+            {
+                title: 'Selecione um avatar',
+                cancelButtonTitle: 'Cancelar',
+                takePhotoButtonTitle: 'Usar câmera',
+                chooseFromLibraryButtonTitle: 'Escolher da galeria',
+            },
+            response => {
+                if (response.didCancel) {
+                    return;
+                }
+
+                if (response.error) {
+                    Alert.alert('Erro ao atualizar seu avatar.');
+                    return;
+                }
+
+                // if (response.customButton) {
+                // }
+
+                const data = new FormData();
+
+                data.append('avatar', {
+                    uri: response.uri,
+                    type: 'image/jpeg',
+                    name: `${user.id}.jpg`,
+                });
+
+                api.patch('/users/avatar', data).then(apiResponse => {
+                    updateUser(apiResponse.data);
+                });
+            },
+        );
+    }, [user.id, updateUser]);
 
     return (
         <KeyboardAvoidingView
@@ -91,11 +172,23 @@ const Profile: React.FC = () => {
                 keyboardShouldPersistTaps="handled"
             >
                 <Container>
+                    <BackButton onPress={handleGoBack}>
+                        <Icon name="chevron-left" size={24} color="#999591" />
+                    </BackButton>
+
+                    <UserAvatarButton onPress={handleUpdateAvatar}>
+                        <UserAvatar source={{ uri: user.avatarUrl }} />
+                    </UserAvatarButton>
+
                     <View>
                         <Title>Meu perfil</Title>
                     </View>
 
-                    <Form onSubmit={handleProfile} ref={formRef}>
+                    <Form
+                        initialData={{ name: user.name, email: user.email }}
+                        onSubmit={handleProfile}
+                        ref={formRef}
+                    >
                         <Input
                             autoCorrect
                             autoCapitalize="words"
@@ -117,14 +210,41 @@ const Profile: React.FC = () => {
                             placeholder="E-mail"
                             returnKeyType="next"
                             onSubmitEditing={() => {
+                                oldPasswordInputRef.current?.focus();
+                            }}
+                        />
+                        <Input
+                            ref={oldPasswordInputRef}
+                            name="oldPassword"
+                            icon="lock"
+                            containerStyle={{ marginTop: 16 }}
+                            placeholder="Senha atual"
+                            secureTextEntry
+                            textContentType="password"
+                            returnKeyType="next"
+                            onSubmitEditing={() => {
                                 passwordInputRef.current?.focus();
                             }}
                         />
+
                         <Input
                             ref={passwordInputRef}
                             name="password"
                             icon="lock"
-                            placeholder="Senha"
+                            placeholder="Nova senha"
+                            secureTextEntry
+                            textContentType="newPassword"
+                            returnKeyType="next"
+                            onSubmitEditing={() => {
+                                confirmPasswordInputRef.current?.focus();
+                            }}
+                        />
+
+                        <Input
+                            ref={confirmPasswordInputRef}
+                            name="passwordConfirmation"
+                            icon="lock"
+                            placeholder="Confirmação de senha"
                             secureTextEntry
                             textContentType="newPassword"
                             returnKeyType="send"
@@ -142,17 +262,6 @@ const Profile: React.FC = () => {
                         Confirmar alterações
                     </Button>
                 </Container>
-
-                <BackToSignIn
-                    onPress={() => {
-                        navigation.goBack();
-                    }}
-                >
-                    <BackToSignInText>
-                        Voltar para logon
-                        <Icon name="arrow-left" size={20} color="#fff" />
-                    </BackToSignInText>
-                </BackToSignIn>
             </ScrollView>
         </KeyboardAvoidingView>
     );

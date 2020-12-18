@@ -34,7 +34,7 @@ export const Header = styled.View`
     align-items: center;
 `;
 
-export const BackButton = styled(RectButton)``;
+export const BackButton = styled.TouchableOpacity``;
 
 export const HeaderTitle = styled.Text`
     color: #f5ede8;
