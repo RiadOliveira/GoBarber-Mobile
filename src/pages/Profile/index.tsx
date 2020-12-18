@@ -143,9 +143,6 @@ const Profile: React.FC = () => {
                     return;
                 }
 
-                // if (response.customButton) {
-                // }
-
                 const data = new FormData();
 
                 data.append('avatar', {
