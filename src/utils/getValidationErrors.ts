@@ -4,6 +4,8 @@ interface Errors {
     [key: string]: string;
 }
 
+// Analisar a tipagem do path para ver se da overwrite
+
 export default function getValidationErrors(err: ValidationError): Errors {
     const validationErrors: Errors = {};
 
